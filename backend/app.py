@@ -13,7 +13,7 @@ Run this file to start the backend server:
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from models import get_db, init_db, dict_from_row
+from models import get_db, init_db, dict_from_row, get_db_type, get_placeholder
 from scheduler import generate_study_plan
 from ai_service import suggest_topics
 from datetime import datetime
@@ -29,6 +29,8 @@ from reportlab.lib import colors
 # ============================================================
 # App Setup
 # ============================================================
+app = Flask(__name__)
+
 # CORS configuration - Allow specific origin in production, everything in dev
 ALLOWED_ORIGIN = os.getenv('ALLOWED_ORIGIN', '*')
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGIN}})
@@ -39,6 +41,9 @@ CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGIN}})
 # ============================================================
 with app.app_context():
     init_db()
+
+# Get the right placeholder for the current database
+PH = get_placeholder()
 
 
 # ============================================================
@@ -120,31 +125,34 @@ def create_plan():
         # Store in database
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO study_plans (subjects, hours_per_day, exam_date, created_at, plan_data)
-               VALUES (?, ?, ?, ?, ?)""",
-            (
-                json.dumps(subjects),
-                hours_per_day,
-                exam_date,
-                datetime.now().isoformat(),
-                json.dumps(plan_result)
+        
+        db_type = get_db_type()
+        created_at = datetime.now().isoformat()
+        
+        if db_type == 'postgres':
+            cursor.execute(
+                f"INSERT INTO study_plans (subjects, hours_per_day, exam_date, created_at, plan_data) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}) RETURNING id",
+                (json.dumps(subjects), hours_per_day, exam_date, created_at, json.dumps(plan_result))
             )
-        )
-        plan_id = cursor.lastrowid
+            plan_id = cursor.fetchone()['id']
+        else:
+            cursor.execute(
+                f"INSERT INTO study_plans (subjects, hours_per_day, exam_date, created_at, plan_data) VALUES ({PH}, {PH}, {PH}, {PH}, {PH})",
+                (json.dumps(subjects), hours_per_day, exam_date, created_at, json.dumps(plan_result))
+            )
+            plan_id = cursor.lastrowid
 
         # Also create progress entries for each study session
         for day in plan_result.get("schedule", []):
             for session in day.get("sessions", []):
                 if session["type"] == "study":
                     cursor.execute(
-                        """INSERT INTO progress (plan_id, date, subject, topic, duration_minutes, completed)
-                           VALUES (?, ?, ?, ?, ?, 0)""",
-                        (plan_id, day["date"], session["subject"],
-                         session["topic"], session["duration_minutes"])
+                        f"INSERT INTO progress (plan_id, date, subject, topic, duration_minutes, completed) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, 0)",
+                        (plan_id, day["date"], session["subject"], session["topic"], session["duration_minutes"])
                     )
-
-        conn.commit()
+        
+        if db_type == 'sqlite':
+            conn.commit()
         conn.close()
 
         return jsonify({
@@ -188,7 +196,7 @@ def get_plan(plan_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM study_plans WHERE id = ?", (plan_id,))
+        cursor.execute(f"SELECT * FROM study_plans WHERE id = {PH}", (plan_id,))
         row = cursor.fetchone()
         conn.close()
 
@@ -212,10 +220,12 @@ def delete_plan(plan_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM progress WHERE plan_id = ?", (plan_id,))
-        cursor.execute("DELETE FROM reminders WHERE plan_id = ?", (plan_id,))
-        cursor.execute("DELETE FROM study_plans WHERE id = ?", (plan_id,))
-        conn.commit()
+        cursor.execute(f"DELETE FROM progress WHERE plan_id = {PH}", (plan_id,))
+        cursor.execute(f"DELETE FROM reminders WHERE plan_id = {PH}", (plan_id,))
+        cursor.execute(f"DELETE FROM study_plans WHERE id = {PH}", (plan_id,))
+        
+        if get_db_type() == 'sqlite':
+            conn.commit()
 
         if cursor.rowcount == 0:
             conn.close()
@@ -236,7 +246,7 @@ def get_progress(plan_id):
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM progress WHERE plan_id = ? ORDER BY date, id",
+            f"SELECT * FROM progress WHERE plan_id = {PH} ORDER BY date, id",
             (plan_id,)
         )
         rows = cursor.fetchall()
@@ -286,7 +296,7 @@ def toggle_progress(progress_id):
         cursor = conn.cursor()
 
         # Get current status
-        cursor.execute("SELECT completed FROM progress WHERE id = ?", (progress_id,))
+        cursor.execute(f"SELECT completed FROM progress WHERE id = {PH}", (progress_id,))
         row = cursor.fetchone()
 
         if not row:
@@ -296,10 +306,12 @@ def toggle_progress(progress_id):
         # Toggle: 0 -> 1 or 1 -> 0
         new_status = 0 if row["completed"] else 1
         cursor.execute(
-            "UPDATE progress SET completed = ? WHERE id = ?",
+            f"UPDATE progress SET completed = {PH} WHERE id = {PH}",
             (new_status, progress_id)
         )
-        conn.commit()
+        
+        if get_db_type() == 'sqlite':
+            conn.commit()
         conn.close()
 
         return jsonify({
@@ -389,11 +401,11 @@ def create_reminder(plan_id):
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
-            """INSERT INTO reminders (plan_id, message, remind_date, remind_time, is_active, created_at)
-               VALUES (?, ?, ?, ?, 1, ?)""",
+            f"INSERT INTO reminders (plan_id, message, remind_date, remind_time, is_active, created_at) VALUES ({PH}, {PH}, {PH}, {PH}, 1, {PH})",
             (plan_id, message, remind_date, remind_time, datetime.now().isoformat())
         )
-        conn.commit()
+        if get_db_type() == 'sqlite':
+            conn.commit()
         reminder_id = cursor.lastrowid
         conn.close()
 
@@ -409,8 +421,9 @@ def delete_reminder(reminder_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
-        conn.commit()
+        cursor.execute(f"DELETE FROM reminders WHERE id = {PH}", (reminder_id,))
+        if get_db_type() == 'sqlite':
+            conn.commit()
         conn.close()
 
         return jsonify({"message": "Reminder deleted."}), 200
@@ -426,10 +439,11 @@ def dismiss_reminder(reminder_id):
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE reminders SET is_active = 0 WHERE id = ?",
+            f"UPDATE reminders SET is_active = 0 WHERE id = {PH}",
             (reminder_id,)
         )
-        conn.commit()
+        if get_db_type() == 'sqlite':
+            conn.commit()
         conn.close()
 
         return jsonify({"message": "Reminder dismissed."}), 200
@@ -463,7 +477,7 @@ def export_plan_pdf(plan_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM study_plans WHERE id = ?", (plan_id,))
+        cursor.execute(f"SELECT * FROM study_plans WHERE id = {PH}", (plan_id,))
         row = cursor.fetchone()
         conn.close()
 

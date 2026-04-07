@@ -8,80 +8,96 @@ import os
 import json
 from datetime import datetime
 
-# Path to the SQLite database file
-# Defaults to local directory in dev, can be set to a persistent volume path in production
+# Database Configuration
+DATABASE_URL = os.getenv('DATABASE_URL')
 DATABASE_PATH = os.getenv('DATABASE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'study_planner.db'))
 
+def get_db_type():
+    """Returns 'postgres' or 'sqlite' based on environment."""
+    if DATABASE_URL and (DATABASE_URL.startswith('postgres://') or DATABASE_URL.startswith('postgresql://')):
+        return 'postgres'
+    return 'sqlite'
 
 def get_db():
-    """
-    Create and return a database connection.
-    Uses row_factory so we can access columns by name.
-    """
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row  # Allows dict-like access to rows
-    conn.execute("PRAGMA foreign_keys = ON")  # Enable foreign key support
+    """Create and return a database connection based on environment."""
+    db_type = get_db_type()
+    
+    if db_type == 'postgres':
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        # Handle Render's postgres:// vs postgresql://
+        url = DATABASE_URL.replace('postgres://', 'postgresql://')
+        conn = psycopg2.connect(url, cursor_factory=RealDictCursor)
+        conn.autocommit = True
+    else:
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        
     return conn
 
+def get_placeholder():
+    """Returns '?' for SQLite or '%s' for Postgres."""
+    return '%s' if get_db_type() == 'postgres' else '?'
 
 def init_db():
-    """
-    Initialize the database by creating all required tables.
-    Called once when the app starts.
-    """
+    """Initialize the database tables for either SQLite or Postgres."""
     conn = get_db()
     cursor = conn.cursor()
+    db_type = get_db_type()
+    
+    # Type mapping for database compatibility
+    pk_type = "SERIAL PRIMARY KEY" if db_type == 'postgres' else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    text_type = "TEXT"
+    json_type = "TEXT" # Both treat JSON as text in this simple implementation
 
     # ---- Study Plans table ----
-    # Stores each generated study plan along with user input
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS study_plans (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            subjects TEXT NOT NULL,           -- JSON array of subject objects
-            hours_per_day REAL NOT NULL,      -- Available study hours per day
-            exam_date TEXT NOT NULL,          -- Target exam/deadline date (YYYY-MM-DD)
-            created_at TEXT NOT NULL,         -- When the plan was created
-            plan_data TEXT NOT NULL           -- JSON of the generated timetable
+            id {pk_type},
+            subjects {text_type} NOT NULL,
+            hours_per_day REAL NOT NULL,
+            exam_date {text_type} NOT NULL,
+            created_at {text_type} NOT NULL,
+            plan_data {json_type} NOT NULL
         )
     ''')
 
     # ---- Progress table ----
-    # Tracks completion status for each task in a study plan
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS progress (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            plan_id INTEGER NOT NULL,         -- Which study plan this belongs to
-            date TEXT NOT NULL,               -- The date of this task (YYYY-MM-DD)
-            subject TEXT NOT NULL,            -- Subject name
-            topic TEXT NOT NULL,              -- Topic/chapter name
-            duration_minutes INTEGER NOT NULL, -- Planned duration in minutes
-            completed INTEGER DEFAULT 0,      -- 0 = not done, 1 = done
+            id {pk_type},
+            plan_id INTEGER NOT NULL,
+            date {text_type} NOT NULL,
+            subject {text_type} NOT NULL,
+            topic {text_type} NOT NULL,
+            duration_minutes INTEGER NOT NULL,
+            completed INTEGER DEFAULT 0,
             FOREIGN KEY (plan_id) REFERENCES study_plans(id) ON DELETE CASCADE
         )
     ''')
 
     # ---- Reminders table ----
-    # Stores simple reminders for the user
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS reminders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {pk_type},
             plan_id INTEGER NOT NULL,
-            message TEXT NOT NULL,
-            remind_date TEXT NOT NULL,         -- Date to show reminder (YYYY-MM-DD)
-            remind_time TEXT DEFAULT '09:00',  -- Time to remind (HH:MM)
-            is_active INTEGER DEFAULT 1,       -- 1 = active, 0 = dismissed
-            created_at TEXT NOT NULL,
+            message {text_type} NOT NULL,
+            remind_date {text_type} NOT NULL,
+            remind_time {text_type} DEFAULT '09:00',
+            is_active INTEGER DEFAULT 1,
+            created_at {text_type} NOT NULL,
             FOREIGN KEY (plan_id) REFERENCES study_plans(id) ON DELETE CASCADE
         )
     ''')
 
-    conn.commit()
+    if db_type == 'sqlite':
+        conn.commit()
     conn.close()
-    print("Database initialized successfully!")
-
+    print(f"Database ({db_type}) initialized successfully!")
 
 def dict_from_row(row):
-    """Convert a sqlite3.Row object to a plain dictionary."""
-    if row is None:
-        return None
+    """Convert a row object to a plain dictionary."""
+    if row is None: return None
+    # RealDictCursor in Postgres already returns a dict or dict-like
     return dict(row)
