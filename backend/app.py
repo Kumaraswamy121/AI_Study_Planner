@@ -17,6 +17,7 @@ from models import get_db, init_db, dict_from_row
 from scheduler import generate_study_plan
 from ai_service import suggest_topics
 from datetime import datetime
+import os
 import json
 import io
 from flask import send_file
@@ -28,10 +29,9 @@ from reportlab.lib import colors
 # ============================================================
 # App Setup
 # ============================================================
-app = Flask(__name__)
-
-# Permissive CORS for development
-CORS(app)
+# CORS configuration - Allow specific origin in production, everything in dev
+ALLOWED_ORIGIN = os.getenv('ALLOWED_ORIGIN', '*')
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGIN}})
 
 
 # ============================================================
@@ -565,9 +565,14 @@ def export_plan_pdf(plan_id):
 # Run the Server
 # ============================================================
 if __name__ == "__main__":
-    print("\nAI Study Planner Backend")
+    # Get port from environment (Render/Heroku set this automatically)
+    port = int(os.getenv("PORT", 5001))
+    
+    print(f"\nAI Study Planner Backend starting on port {port}...")
     print("=" * 40)
-    print("Server running at: http://localhost:5001")
-    print("API docs: All endpoints start with /api/")
+    print(f"Server accessible at: http://0.0.0.0:{port}")
     print("=" * 40 + "\n")
-    app.run(debug=True, port=5001)
+    
+    # In production, this file is usually run by gunicorn, not directly.
+    # If run directly (dev), we use debug mode.
+    app.run(host='0.0.0.0', port=port, debug=(os.getenv('FLASK_ENV') != 'production'))

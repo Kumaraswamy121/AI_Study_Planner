@@ -5,11 +5,11 @@
 
 import axios from 'axios';
 
-// Base URL for the Flask backend
+// Base URL for the Flask backend - Uses environment variable or defaults to localhost
 const API = axios.create({
-  baseURL: 'http://localhost:5001/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30000, // 30 second timeout
+  timeout: 30000, 
 });
 
 // ---- Study Plans ----

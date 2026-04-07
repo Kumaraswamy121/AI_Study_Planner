@@ -8,8 +8,9 @@ import os
 import json
 from datetime import datetime
 
-# Path to the SQLite database file (stored in the backend folder)
-DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'study_planner.db')
+# Path to the SQLite database file
+# Defaults to local directory in dev, can be set to a persistent volume path in production
+DATABASE_PATH = os.getenv('DATABASE_PATH', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'study_planner.db'))
 
 
 def get_db():
