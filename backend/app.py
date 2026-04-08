@@ -90,6 +90,7 @@ def create_plan():
         "exam_date": "2026-05-15"
     }
     """
+    try:
         print(f"[{datetime.now().isoformat()}] Received plan request. Validating...")
         data = request.get_json()
 
@@ -175,6 +176,7 @@ def create_plan():
         }), 201
 
     except Exception as e:
+        print(f"[{datetime.now().isoformat()}] ERROR in create_plan: {str(e)}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
