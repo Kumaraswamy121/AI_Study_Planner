@@ -27,7 +27,11 @@ def get_db():
         from psycopg2.extras import RealDictCursor
         # Handle Render's postgres:// vs postgresql://
         url = DATABASE_URL.replace('postgres://', 'postgresql://')
-        conn = psycopg2.connect(url, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(
+            url, 
+            cursor_factory=RealDictCursor,
+            connect_timeout=10 # Stop waiting after 10 seconds
+        )
         conn.autocommit = True
     else:
         conn = sqlite3.connect(DATABASE_PATH)

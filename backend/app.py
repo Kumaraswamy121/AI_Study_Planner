@@ -90,7 +90,7 @@ def create_plan():
         "exam_date": "2026-05-15"
     }
     """
-    try:
+        print(f"[{datetime.now().isoformat()}] Received plan request. Validating...")
         data = request.get_json()
 
         # Validate required fields
@@ -119,16 +119,19 @@ def create_plan():
             return jsonify({"error": "Validation failed.", "details": errors}), 400
 
         # Generate the study plan
+        print(f"[{datetime.now().isoformat()}] Generating schedule logic...")
         hours_per_day = float(hours_per_day)
         plan_result = generate_study_plan(subjects, hours_per_day, exam_date)
 
         # Store in database
+        print(f"[{datetime.now().isoformat()}] Connecting to database...")
         conn = get_db()
         cursor = conn.cursor()
         
         db_type = get_db_type()
         created_at = datetime.now().isoformat()
         
+        print(f"[{datetime.now().isoformat()}] Inserting plan into {db_type}...")
         if db_type == 'postgres':
             cursor.execute(
                 f"INSERT INTO study_plans (subjects, hours_per_day, exam_date, created_at, plan_data) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}) RETURNING id",
@@ -143,6 +146,7 @@ def create_plan():
             plan_id = cursor.lastrowid
 
         # Also create progress entries for each study session in bulk for performance
+        print(f"[{datetime.now().isoformat()}] Preparing {len(plan_result.get('schedule', []))} days of progress sessions...")
         progress_entries = []
         for day in plan_result.get("schedule", []):
             for session in day.get("sessions", []):
@@ -152,15 +156,18 @@ def create_plan():
                     ))
         
         if progress_entries:
+            print(f"[{datetime.now().isoformat()}] Batch inserting {len(progress_entries)} sessions...")
             cursor.executemany(
                 f"INSERT INTO progress (plan_id, date, subject, topic, duration_minutes, completed) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, 0)",
                 progress_entries
             )
         
+        print(f"[{datetime.now().isoformat()}] Finalizing transaction...")
         if db_type == 'sqlite':
             conn.commit()
         conn.close()
 
+        print(f"[{datetime.now().isoformat()}] Plan creation complete!")
         return jsonify({
             "id": plan_id,
             "plan": plan_result,

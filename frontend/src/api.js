@@ -5,9 +5,20 @@
 
 import axios from 'axios';
 
-// Base URL for the Flask backend - Uses environment variable or defaults to localhost
+// Base URL for the Flask backend - Uses environment variable or defaults to production origin
+const getBaseURL = () => {
+  if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
+  
+  // If we're on the production site, try to use the same domain for the backend
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    return `${window.location.origin}/api`;
+  }
+  
+  return 'http://localhost:5001/api';
+};
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api',
+  baseURL: getBaseURL(),
   headers: { 'Content-Type': 'application/json' },
   timeout: 60000, 
 });
