@@ -48,8 +48,13 @@ def generate_study_plan(subjects, hours_per_day, exam_date_str):
 
     today = datetime.now().date()
 
-    # Calculate available days (at least 1 day)
+    # Calculate available days (at least 1 day, max 180 days for performance)
     days_available = (exam_date - today).days
+    
+    if days_available > 180:
+        days_available = 180
+        warnings.append("Target date refined: System generates a maximum of 180 days (6 months) for optimal performance.")
+    
     if days_available <= 0:
         days_available = 1
         warnings.append("Exam date is today or in the past! Creating a 1-day crash plan.")

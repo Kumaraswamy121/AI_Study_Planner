@@ -142,14 +142,20 @@ def create_plan():
             )
             plan_id = cursor.lastrowid
 
-        # Also create progress entries for each study session
+        # Also create progress entries for each study session in bulk for performance
+        progress_entries = []
         for day in plan_result.get("schedule", []):
             for session in day.get("sessions", []):
                 if session["type"] == "study":
-                    cursor.execute(
-                        f"INSERT INTO progress (plan_id, date, subject, topic, duration_minutes, completed) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, 0)",
-                        (plan_id, day["date"], session["subject"], session["topic"], session["duration_minutes"])
-                    )
+                    progress_entries.append((
+                        plan_id, day["date"], session["subject"], session["topic"], session["duration_minutes"]
+                    ))
+        
+        if progress_entries:
+            cursor.executemany(
+                f"INSERT INTO progress (plan_id, date, subject, topic, duration_minutes, completed) VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, 0)",
+                progress_entries
+            )
         
         if db_type == 'sqlite':
             conn.commit()
