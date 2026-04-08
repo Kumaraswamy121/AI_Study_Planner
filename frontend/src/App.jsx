@@ -19,7 +19,8 @@ export default function App() {
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        const res = await fetch('http://localhost:5001/api/health');
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+        const res = await fetch(`${API_BASE}/health`);
         if (res.ok) setBackendStatus('connected');
         else throw new Error();
       } catch {

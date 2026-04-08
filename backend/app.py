@@ -340,7 +340,7 @@ def update_progress_entry(progress_id):
 
         for field in allowed_fields:
             if field in data:
-                updates.append(f"{field} = ?")
+                updates.append(f"{field} = {PH}")
                 values.append(data[field])
 
         if not updates:
@@ -348,7 +348,7 @@ def update_progress_entry(progress_id):
             return jsonify({"error": "No valid fields to update."}), 400
 
         values.append(progress_id)
-        query = f"UPDATE progress SET {', '.join(updates)} WHERE id = ?"
+        query = f"UPDATE progress SET {', '.join(updates)} WHERE id = {PH}"
         cursor.execute(query, values)
         conn.commit()
 
@@ -371,7 +371,7 @@ def get_reminders(plan_id):
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM reminders WHERE plan_id = ? ORDER BY remind_date, remind_time",
+            f"SELECT * FROM reminders WHERE plan_id = {PH} ORDER BY remind_date, remind_time",
             (plan_id,)
         )
         rows = cursor.fetchall()
@@ -400,13 +400,25 @@ def create_reminder(plan_id):
 
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute(
-            f"INSERT INTO reminders (plan_id, message, remind_date, remind_time, is_active, created_at) VALUES ({PH}, {PH}, {PH}, {PH}, 1, {PH})",
-            (plan_id, message, remind_date, remind_time, datetime.now().isoformat())
-        )
-        if get_db_type() == 'sqlite':
+        
+        db_type = get_db_type()
+        created_at = datetime.now().isoformat()
+        
+        if db_type == 'postgres':
+            cursor.execute(
+                f"INSERT INTO reminders (plan_id, message, remind_date, remind_time, is_active, created_at) VALUES ({PH}, {PH}, {PH}, {PH}, 1, {PH}) RETURNING id",
+                (plan_id, message, remind_date, remind_time, created_at)
+            )
+            reminder_id = cursor.fetchone()['id']
+        else:
+            cursor.execute(
+                f"INSERT INTO reminders (plan_id, message, remind_date, remind_time, is_active, created_at) VALUES ({PH}, {PH}, {PH}, {PH}, 1, {PH})",
+                (plan_id, message, remind_date, remind_time, created_at)
+            )
+            reminder_id = cursor.lastrowid
+            
+        if db_type == 'sqlite':
             conn.commit()
-        reminder_id = cursor.lastrowid
         conn.close()
 
         return jsonify({"id": reminder_id, "message": "Reminder created!"}), 201
